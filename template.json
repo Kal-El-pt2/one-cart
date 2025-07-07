@@ -1,15 +1,30 @@
 {
   "category1": {
     "_links": [
-      "link1",
-      "link2"
-      
-    ],
-    "subcategory1": {}
+      [
+        "link1",
+        "description1"
+      ],
+      [
+        "link2",
+        "description2"
+      ]      
+    ]
   },
   "category2": {
     "_links": [
-      "link1"
-    ]
+      [
+        "link1",
+        "description3"
+      ]
+    ],
+    "sub_category1": {
+      "_links": [
+        [
+          "link1",
+          "description1"
+        ]
+      ]
+    }
   }
 }
