@@ -1,10 +1,8 @@
 import json
 import webbrowser
 import os
-import requests
-from bs4 import BeautifulSoup
 
-JSON_FILE = "products.json"
+JSON_FILE = "template.json"
 LINKS_KEY = "_links"
 
 def show_current_view(node):
