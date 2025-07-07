@@ -182,6 +182,25 @@ def main_loop(data):
             data[name] = {}
             save_data(data)
             print(f"✅ Created new top-level category: '{name}'")
+            
+        elif cmd.startswith("delcat "):
+            try:
+                idx = int(cmd.split()[1]) - 1
+                subcats = [k for k in node if k != LINKS_KEY]
+                if idx < 0 or idx >= len(subcats):
+                    print("❌ Invalid category number.")
+                    continue
+                target = subcats[idx]
+                confirm = input(f"⚠️ Are you sure you want to delete '{target}' and all its contents? (y/N): ").strip().lower()
+                if confirm == "y":
+                    del node[target]
+                    save_data(data)
+                    print(f"🗑️ Deleted category '{target}'")
+                else:
+                    print("❌ Cancelled.")
+            except:
+                print("❌ Usage: delcat <category_number>")
+
 
         else:
             print("❓ Unknown command. Try: list, open <x>, sub <name>, add <url>, goto <x>, edit <n> <url>, remove <n>, back, exit")
