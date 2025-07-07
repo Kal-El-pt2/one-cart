@@ -75,17 +75,28 @@ def main_loop(data):
                 print("❌ Usage: open <subcategory_number>")
 
         elif cmd.startswith("goto "):
+            arg = cmd[5:].strip()
             links = node.get(LINKS_KEY, [])
             offset = len([k for k in node if k != LINKS_KEY])
-            try:
-                idx = int(cmd.split()[1]) - 1 - offset
-                if idx < 0 or idx >= len(links):
-                    print("❌ Invalid link number.")
-                    continue
-                print(f"🌐 Opening: {links[idx]}")
-                webbrowser.open_new_tab(links[idx])
-            except:
-                print("❌ Usage: goto <link_number>")
+
+            if arg == "all":
+                if not links:
+                    print("📭 No links to open.")
+                else:
+                    print(f"🌐 Opening all {len(links)} links...")
+                    for url in links:
+                        webbrowser.open_new_tab(url)
+            else:
+                try:
+                    idx = int(arg) - 1 - offset
+                    if idx < 0 or idx >= len(links):
+                        print("❌ Invalid link number.")
+                        continue
+                    print(f"🌐 Opening: {links[idx]}")
+                    webbrowser.open_new_tab(links[idx])
+                except:
+                    print("❌ Usage: goto <link_number> or goto all")
+
 
         elif cmd.startswith("add "):
             url = cmd[4:].strip()
