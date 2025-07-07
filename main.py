@@ -86,6 +86,22 @@ def main_loop(data):
                     print(f"🌐 Opening all {len(links)} links...")
                     for url in links:
                         webbrowser.open_new_tab(url)
+
+            elif arg.startswith("range "):
+                try:
+                    range_str = arg[6:].strip()
+                    start_str, end_str = range_str.split("-")
+                    start = int(start_str) - 1 - offset
+                    end = int(end_str) - offset
+                    if start < 0 or end > len(links) or start >= end:
+                        print("❌ Invalid range.")
+                        continue
+                    print(f"🌐 Opening links {start+1+offset} to {end+offset}...")
+                    for url in links[start:end]:
+                        webbrowser.open_new_tab(url)
+                except:
+                    print("❌ Usage: goto range <start>-<end>")
+
             else:
                 try:
                     idx = int(arg) - 1 - offset
@@ -95,7 +111,8 @@ def main_loop(data):
                     print(f"🌐 Opening: {links[idx]}")
                     webbrowser.open_new_tab(links[idx])
                 except:
-                    print("❌ Usage: goto <link_number> or goto all")
+                    print("❌ Usage: goto <link_number>, goto all, or goto range x-y")
+
 
 
         elif cmd.startswith("add "):
