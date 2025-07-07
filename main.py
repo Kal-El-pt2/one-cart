@@ -201,6 +201,27 @@ def main_loop(data):
             except:
                 print("❌ Usage: delcat <category_number>")
 
+        elif cmd.startswith("rename "):
+            parts = cmd.split(maxsplit=2)
+            if len(parts) != 3:
+                print("❌ Usage: rename <category_number> <new_name>")
+                continue
+            try:
+                idx = int(parts[1]) - 1
+                new_name = parts[2].strip()
+                subcats = [k for k in node if k != LINKS_KEY]
+                if idx < 0 or idx >= len(subcats):
+                    print("❌ Invalid category number.")
+                    continue
+                old_name = subcats[idx]
+                if new_name in node:
+                    print("⚠️ A category with that name already exists.")
+                    continue
+                node[new_name] = node.pop(old_name)
+                save_data(data)
+                print(f"✏️ Renamed '{old_name}' → '{new_name}'")
+            except:
+                print("❌ Invalid input. Usage: rename <category_number> <new_name>")
 
         else:
             print("❓ Unknown command. Try: list, open <x>, sub <name>, add <url>, goto <x>, edit <n> <url>, remove <n>, back, exit")
