@@ -1,8 +1,6 @@
 import json
 import webbrowser
 import os
-import requests
-from bs4 import BeautifulSoup
 
 JSON_FILE = "products.json"
 LINKS_KEY = "_links"
@@ -15,10 +13,18 @@ def show_current_view(node):
         print("📂 Subcategories:")
         for i, sub in enumerate(subcategories, 1):
             print(f"  [{i}] {sub}")
+
     if links:
         print("🔗 Links:")
-        for i, (url, desc) in enumerate(links, len(subcategories) + 1):
-            print(f"  [{i}] {url}  →  \"{desc}\"")
+        for i, item in enumerate(links, len(subcategories) + 1):
+            if isinstance(item, list) and len(item) == 2:
+                url, desc = item
+            else:
+                url, desc = item, ""
+
+            display_text = desc if desc.strip() else url
+            print(f"  [{i}] {display_text}")
+
     if not subcategories and not links:
         print("📭 Empty category")
 
@@ -89,7 +95,8 @@ def main_loop(data):
                     print("📭 No links to open.")
                 else:
                     print(f"🌐 Opening all {len(links)} links...")
-                    for url, _ in links:
+                    for item in links:
+                        url = item[0] if isinstance(item, list) else item
                         webbrowser.open_new_tab(url)
 
             elif arg.startswith("range "):
@@ -100,9 +107,10 @@ def main_loop(data):
                     end = int(end_str) - offset
                     if start < 0 or end > len(links) or start >= end:
                         print("❌ Invalid range.")
-                        continue
-                    print(f"🌐 Opening links {start + 1 + offset} to {end + offset}...")
-                    for url, _ in links[start:end]:
+                        return
+                    print(f"🌐 Opening links {start+1+offset} to {end+offset}...")
+                    for item in links[start:end]:
+                        url = item[0] if isinstance(item, list) else item
                         webbrowser.open_new_tab(url)
                 except:
                     print("❌ Usage: goto range <start>-<end>")
@@ -112,13 +120,13 @@ def main_loop(data):
                     idx = int(arg) - 1 - offset
                     if idx < 0 or idx >= len(links):
                         print("❌ Invalid link number.")
-                        continue
-                    url, desc = links[idx]
-                    print(f"🌐 Opening: {url}  →  \"{desc}\"")
+                        return
+                    item = links[idx]
+                    url = item[0] if isinstance(item, list) else item
+                    print(f"🌐 Opening: {url}")
                     webbrowser.open_new_tab(url)
                 except:
                     print("❌ Usage: goto <link_number>, goto all, or goto range x-y")
-
 
 
         elif cmd.startswith("add "):
