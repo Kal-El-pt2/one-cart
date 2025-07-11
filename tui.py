@@ -11,6 +11,7 @@ from rich.live import Live
 from rich.align import Align
 from rich.columns import Columns
 from rich.console import Group
+import pyperclip
 import keyboard
 import threading
 import time
@@ -28,6 +29,9 @@ class ProductLinkManagerTUI:
         self.running = True
         self.status_message = ""
         self.status_time = 0
+        self.mode = "browse"
+        self.add_inputs = ["", ""]
+        self.add_input_index = 0
         
     def load_data(self):
         if not os.path.exists(JSON_FILE):
@@ -73,16 +77,15 @@ class ProductLinkManagerTUI:
             Align.center(Text("🛒 Product Link Manager (TUI)", style="bold cyan")),
             Text(f"📂 {'/'.join(self.path) if self.path else 'root'}", style="blue")
         )
-        
         header = Panel(
             header_content,
             title="Product Manager",
             border_style="cyan"
         )
-        
+
         # Items table
         items = self.get_current_items()
-        
+
         if not items:
             content_text = Text("📭 No items in this category", style="dim")
             content = Panel(
@@ -91,14 +94,11 @@ class ProductLinkManagerTUI:
                 border_style="white"
             )
         else:
-            # Create items display
             items_display = []
-            
-            # Calculate visible items
             visible_height = 15
             start_index = max(0, self.current_selection - visible_height // 2)
             end_index = min(len(items), start_index + visible_height)
-            
+
             for i in range(start_index, end_index):
                 item = items[i]
                 if item[0] == "category":
@@ -109,24 +109,44 @@ class ProductLinkManagerTUI:
                     prefix = "🔗"
                     text = item[1]
                     style = "yellow"
-                
-                # Truncate long text
+
                 if len(text) > 60:
                     text = text[:57] + "..."
-                
-                if i == self.current_selection:
+
+                if i == self.current_selection and self.mode == "browse":
                     display_text = Text(f"► {prefix} {text}", style="bold white on blue")
                 else:
                     display_text = Text(f"  {prefix} {text}", style=style)
-                
+
                 items_display.append(display_text)
-            
+
             content = Panel(
                 Group(*items_display),
                 title=f"Items ({len(items)} total)",
                 border_style="white"
             )
-        
+
+        # Prepare main display parts
+        display_parts = [header, content]
+
+        # If in adding mode, render input fields
+        if self.mode == "adding":
+            input_panels = []
+            labels = ["URL", "Description"]
+            for i, val in enumerate(self.add_inputs):
+                is_active = i == self.add_input_index
+                style = "bold white on blue" if is_active else "white"
+                panel = Panel(
+                    Text(f"{labels[i]}: {val}", style=style),
+                    border_style="cyan"
+                )
+                input_panels.append(panel)
+
+            add_instructions = Text("↑↓ to switch | Enter to confirm | ESC to cancel | Ctrl+V to paste", style="cyan")
+            input_panels.append(Panel(Align.center(add_instructions), border_style="cyan"))
+
+            display_parts.extend(input_panels)
+
         # Footer with controls
         controls_text = Text()
         controls_text.append("↑↓: Navigate  ", style="cyan")
@@ -136,25 +156,26 @@ class ProductLinkManagerTUI:
         controls_text.append("D: Delete  ", style="cyan")
         controls_text.append("N: New Category  ", style="cyan")
         controls_text.append("Q: Quit", style="cyan")
-        
+
         footer = Panel(
             Align.center(controls_text),
             title="Controls",
             border_style="cyan"
         )
-        
-        # Create the main display group
-        display_parts = [header, content, footer]
-        
-        # Add status message if active
+
+        # Status message if active
         if self.status_message and time.time() - self.status_time < 3:
             status = Panel(
                 Align.center(Text(self.status_message, style="bold green")),
                 border_style="green"
             )
-            display_parts.insert(-1, status)  # Insert before footer
-        
+            display_parts.append(status)
+
+        # Add footer
+        display_parts.append(footer)
+
         return Group(*display_parts)
+
     
     def show_status(self, message):
         self.status_message = message
@@ -165,27 +186,69 @@ class ProductLinkManagerTUI:
             try:
                 event = keyboard.read_event()
                 if event.event_type == keyboard.KEY_DOWN:
-                    if event.name == 'up':
-                        self.current_selection = max(0, self.current_selection - 1)
-                    elif event.name == 'down':
-                        items = self.get_current_items()
-                        if items:
-                            self.current_selection = min(len(items) - 1, self.current_selection + 1)
-                    elif event.name == 'enter':
-                        self.handle_enter()
-                    elif event.name == 'b':
-                        self.handle_back()
-                    elif event.name == 'a':
-                        self.handle_add()
-                    elif event.name == 'd':
-                        self.handle_delete()
-                    elif event.name == 'n':
-                        self.handle_new_category()
-                    elif event.name == 'q':
-                        self.running = False
-                        break
+                    if self.mode == "browse":
+                        self.handle_browse_input(event)
+                    elif self.mode == "adding":
+                        self.handle_adding_input(event)
             except Exception:
                 continue
+            
+    
+    def handle_browse_input(self, event):
+        if event.name == 'up':
+            self.current_selection = max(0, self.current_selection - 1)
+        elif event.name == 'down':
+            items = self.get_current_items()
+            if items:
+                self.current_selection = min(len(items) - 1, self.current_selection + 1)
+        elif event.name == 'enter':
+            self.handle_enter()
+        elif event.name == 'b':
+            self.handle_back()
+        elif event.name == 'a':
+            self.mode = "adding"
+            self.add_inputs = ["", ""]
+            self.add_input_index = 0
+        elif event.name == 'd':
+            self.handle_delete()
+        elif event.name == 'n':
+            self.handle_new_category()
+        elif event.name == 'q':
+            self.running = False
+
+    def handle_adding_input(self, event):
+        if event.name == 'up':
+            self.add_input_index = max(0, self.add_input_index - 1)
+        elif event.name == 'down':
+            self.add_input_index = min(1, self.add_input_index + 1)
+        elif event.name == 'esc':
+            self.mode = "browse"
+            self.show_status("❌ Add cancelled")
+        elif event.name == 'v' and keyboard.is_pressed('ctrl'):
+            paste_text = pyperclip.paste()
+            self.add_inputs[self.add_input_index] += paste_text
+        elif event.name == 'enter':
+            # On Enter, if URL is empty, do nothing
+            if not self.add_inputs[0].strip():
+                self.show_status("❌ URL cannot be empty")
+            else:
+                # Save the new link
+                node = self.resolve_path(self.path)
+                links = node.setdefault(LINKS_KEY, [])
+                links.append([self.add_inputs[0], self.add_inputs[1]])
+                self.save_data()
+                self.show_status(f"✅ Added: {self.add_inputs[0]}")
+                self.mode = "browse"
+        else:
+            # Type or paste
+            if len(event.name) == 1:
+                self.add_inputs[self.add_input_index] += event.name
+            elif event.name == 'space':
+                self.add_inputs[self.add_input_index] += ' '
+            elif event.name == 'backspace':
+                self.add_inputs[self.add_input_index] = self.add_inputs[self.add_input_index][:-1]
+                
+        
     
     def handle_enter(self):
         items = self.get_current_items()
