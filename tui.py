@@ -16,6 +16,13 @@ import keyboard
 import threading
 import time
 
+# Platform-specific imports
+if os.name == 'posix':
+    import termios
+    import tty
+elif os.name == 'nt':
+    import msvcrt
+
 JSON_FILE = "products.json"
 LINKS_KEY = "_links"
 
@@ -32,7 +39,35 @@ class ProductLinkManagerTUI:
         self.mode = "browse"
         self.add_inputs = ["", ""]
         self.add_input_index = 0
+        self.old_terminal_settings = None
         
+    def setup_terminal(self):
+        """Setup terminal to prevent echo and enable raw input"""
+        if os.name == 'posix':  # Unix/Linux/Mac
+            try:
+                self.old_terminal_settings = termios.tcgetattr(sys.stdin)
+                tty.setraw(sys.stdin.fileno())
+            except:
+                pass
+        elif os.name == 'nt':  # Windows
+            # On Windows, we'll rely on keyboard suppress parameter
+            pass
+        
+    def restore_terminal(self):
+        """Restore terminal settings"""
+        if os.name == 'posix' and self.old_terminal_settings:
+            try:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
+            except:
+                pass
+        elif os.name == 'nt':  # Windows
+            # Clear any pending input
+            try:
+                while msvcrt.kbhit():
+                    msvcrt.getch()
+            except:
+                pass
+    
     def load_data(self):
         if not os.path.exists(JSON_FILE):
             return {}
@@ -136,13 +171,15 @@ class ProductLinkManagerTUI:
             for i, val in enumerate(self.add_inputs):
                 is_active = i == self.add_input_index
                 style = "bold white on blue" if is_active else "white"
+                # Show cursor for active field
+                display_val = val + "█" if is_active else val
                 panel = Panel(
-                    Text(f"{labels[i]}: {val}", style=style),
+                    Text(f"{labels[i]}: {display_val}", style=style),
                     border_style="cyan"
                 )
                 input_panels.append(panel)
 
-            add_instructions = Text("↑↓ to switch | Enter to confirm | ESC to cancel | Ctrl+V to paste", style="cyan")
+            add_instructions = Text("↑↓ to switch | Tab to confirm | ESC to cancel | Ctrl+V to paste", style="cyan")
             input_panels.append(Panel(Align.center(add_instructions), border_style="cyan"))
 
             display_parts.extend(input_panels)
@@ -184,7 +221,8 @@ class ProductLinkManagerTUI:
     def handle_input(self):
         while self.running:
             try:
-                event = keyboard.read_event()
+                # Use keyboard.read_event with suppress to prevent terminal echo
+                event = keyboard.read_event(suppress=True)
                 if event.event_type == keyboard.KEY_DOWN:
                     if self.mode == "browse":
                         self.handle_browse_input(event)
@@ -225,10 +263,13 @@ class ProductLinkManagerTUI:
             self.mode = "browse"
             self.show_status("❌ Add cancelled")
         elif event.name == 'v' and keyboard.is_pressed('ctrl'):
-            paste_text = pyperclip.paste()
-            self.add_inputs[self.add_input_index] += paste_text
-        elif event.name == 'enter':
-            # On Enter, if URL is empty, do nothing
+            try:
+                paste_text = pyperclip.paste()
+                self.add_inputs[self.add_input_index] += paste_text
+            except:
+                self.show_status("❌ Paste failed")
+        elif event.name == 'tab':
+            # On Tab, if URL is empty, do nothing
             if not self.add_inputs[0].strip():
                 self.show_status("❌ URL cannot be empty")
             else:
@@ -240,13 +281,15 @@ class ProductLinkManagerTUI:
                 self.show_status(f"✅ Added: {self.add_inputs[0]}")
                 self.mode = "browse"
         else:
-            # Type or paste
-            if len(event.name) == 1:
+            # Handle text input
+            if len(event.name) == 1 and event.name.isprintable():
                 self.add_inputs[self.add_input_index] += event.name
             elif event.name == 'space':
                 self.add_inputs[self.add_input_index] += ' '
             elif event.name == 'backspace':
                 self.add_inputs[self.add_input_index] = self.add_inputs[self.add_input_index][:-1]
+            elif event.name in [':', '.', '/', '-', '_', '=', '?', '&', '%']:
+                self.add_inputs[self.add_input_index] += event.name
                 
         
     
@@ -274,34 +317,6 @@ class ProductLinkManagerTUI:
         else:
             self.show_status("❌ Already at root")
     
-    def handle_add(self):
-        # Pause the display
-        self.running = False
-        time.sleep(0.1)  # Give time for the display to stop
-        
-        self.console.clear()
-        self.console.print("📝 Adding new link...\n")
-        
-        try:
-            url = Prompt.ask("Enter URL")
-            if not url:
-                self.show_status("❌ No URL provided")
-                return
-            
-            desc = Prompt.ask("Enter description (optional)", default="")
-            
-            node = self.resolve_path(self.path)
-            links = node.setdefault(LINKS_KEY, [])
-            links.append([url, desc])
-            self.save_data()
-            
-            self.show_status(f"✅ Added: {url}")
-        except KeyboardInterrupt:
-            self.show_status("❌ Cancelled")
-        finally:
-            self.running = True
-            self.start_display()
-    
     def handle_delete(self):
         items = self.get_current_items()
         if not items or self.current_selection >= len(items):
@@ -309,6 +324,10 @@ class ProductLinkManagerTUI:
             return
         
         item = items[self.current_selection]
+        
+        # Temporarily restore terminal for input
+        if os.name == 'posix':
+            self.restore_terminal()
         
         # Pause the display
         self.running = False
@@ -348,10 +367,16 @@ class ProductLinkManagerTUI:
         except KeyboardInterrupt:
             self.show_status("❌ Cancelled")
         finally:
+            if os.name == 'posix':
+                self.setup_terminal()
             self.running = True
             self.start_display()
     
     def handle_new_category(self):
+        # Temporarily restore terminal for input
+        if os.name == 'posix':
+            self.restore_terminal()
+        
         # Pause the display
         self.running = False
         time.sleep(0.1)
@@ -374,6 +399,8 @@ class ProductLinkManagerTUI:
         except KeyboardInterrupt:
             self.show_status("❌ Cancelled")
         finally:
+            if os.name == 'posix':
+                self.setup_terminal()
             self.running = True
             self.start_display()
     
@@ -382,7 +409,6 @@ class ProductLinkManagerTUI:
         input_thread = threading.Thread(target=self.handle_input, daemon=True)
         input_thread.start()
         
-        # Use Live context manager for in-place updates
         with Live(self.create_display(), refresh_per_second=4, console=self.console) as live:
             try:
                 while self.running:
@@ -396,7 +422,14 @@ class ProductLinkManagerTUI:
         self.console.print("[yellow]Press Q to quit, use arrow keys to navigate[/yellow]\n")
         time.sleep(1)
         
-        self.start_display()
+        # Setup terminal to prevent echo
+        self.setup_terminal()
+        
+        try:
+            self.start_display()
+        finally:
+            # Always restore terminal settings
+            self.restore_terminal()
         
         self.console.print("\n[bold green]👋 Goodbye![/bold green]")
 
