@@ -2,7 +2,7 @@ import json
 import webbrowser
 import os
 
-JSON_FILE = "template.json"
+JSON_FILE = "products.json"
 LINKS_KEY = "_links"
 
 def show_current_view(node):
