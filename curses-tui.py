@@ -6,6 +6,7 @@ import curses
 import threading
 import time
 import pyperclip
+import re
 
 # Try to import windows-curses on Windows
 try:
@@ -33,6 +34,8 @@ class ProductLinkManagerTUI:
         self.add_inputs = ["", ""]
         self.add_input_index = 0
         self.scroll_offset = 0
+        self.category_input = ""
+        self.category_cursor_pos = 0
         
         # Initialize curses
         curses.curs_set(0)  # Hide cursor
@@ -47,6 +50,7 @@ class ProductLinkManagerTUI:
         curses.init_pair(4, curses.COLOR_WHITE, curses.COLOR_BLUE)  # Selected
         curses.init_pair(5, curses.COLOR_RED, -1)       # Error
         curses.init_pair(6, curses.COLOR_MAGENTA, -1)   # Status
+        curses.init_pair(7, curses.COLOR_WHITE, curses.COLOR_RED)   # Warning
         
         # Get terminal dimensions
         self.height, self.width = self.stdscr.getmaxyx()
@@ -99,6 +103,32 @@ class ProductLinkManagerTUI:
         self.status_message = message
         self.status_time = time.time()
     
+    def validate_category_name(self, name):
+        """Validate category name and return cleaned version"""
+        if not name:
+            return None, "Category name cannot be empty"
+        
+        # Remove leading/trailing whitespace
+        name = name.strip()
+        
+        # Check if empty after stripping
+        if not name:
+            return None, "Category name cannot be empty"
+        
+        # Check for invalid characters (basic validation)
+        if re.search(r'[<>:"/\\|?*]', name):
+            return None, "Category name contains invalid characters"
+        
+        # Check length
+        if len(name) > 50:
+            return None, "Category name too long (max 50 characters)"
+        
+        # Check if it conflicts with reserved key
+        if name == LINKS_KEY:
+            return None, f"'{LINKS_KEY}' is a reserved name"
+        
+        return name, None
+    
     def paste_from_clipboard(self):
         """Paste text from clipboard to current input field"""
         try:
@@ -109,14 +139,24 @@ class ProductLinkManagerTUI:
                 while '  ' in paste_text:  # Remove multiple spaces
                     paste_text = paste_text.replace('  ', ' ')
                 
-                # If pasting into URL field and it looks like a URL, replace entirely
-                if self.add_input_index == 0 and (paste_text.startswith('http://') or paste_text.startswith('https://')):
-                    self.add_inputs[self.add_input_index] = paste_text
-                    self.show_status(f"📋 Pasted URL: {paste_text[:50]}{'...' if len(paste_text) > 50 else ''}")
-                else:
-                    # Otherwise append to current text
-                    self.add_inputs[self.add_input_index] += paste_text
-                    self.show_status(f"📋 Pasted: {paste_text[:30]}{'...' if len(paste_text) > 30 else ''}")
+                if self.mode == "adding":
+                    # If pasting into URL field and it looks like a URL, replace entirely
+                    if self.add_input_index == 0 and (paste_text.startswith('http://') or paste_text.startswith('https://')):
+                        self.add_inputs[self.add_input_index] = paste_text
+                        self.show_status(f"📋 Pasted URL: {paste_text[:50]}{'...' if len(paste_text) > 50 else ''}")
+                    else:
+                        # Otherwise append to current text
+                        self.add_inputs[self.add_input_index] += paste_text
+                        self.show_status(f"📋 Pasted: {paste_text[:30]}{'...' if len(paste_text) > 30 else ''}")
+                elif self.mode == "new_category":
+                    # Paste into category name, but validate first
+                    cleaned_text = re.sub(r'[<>:"/\\|?*]', '', paste_text)
+                    if len(self.category_input + cleaned_text) <= 50:
+                        self.category_input += cleaned_text
+                        self.category_cursor_pos = len(self.category_input)
+                        self.show_status(f"📋 Pasted (cleaned): {cleaned_text[:30]}{'...' if len(cleaned_text) > 30 else ''}")
+                    else:
+                        self.show_status("❌ Paste would exceed character limit")
             else:
                 self.show_status("📋 Clipboard is empty")
         except Exception as e:
@@ -182,6 +222,8 @@ class ProductLinkManagerTUI:
         items_height = self.height - 8  # Leave room for footer and status
         if self.mode == "adding":
             items_height -= 6  # Make room for input fields
+        elif self.mode == "new_category":
+            items_height -= 8  # Make room for category input
         
         items = self.get_current_items()
         
@@ -258,6 +300,55 @@ class ProductLinkManagerTUI:
             instructions = "↑↓:switch | Tab:save | Esc:cancel | Ctrl+V/P:paste"
             self.safe_addstr(input_y + input_height - 2, 2, instructions, curses.color_pair(1))
         
+        # Category input (if in new_category mode)
+        elif self.mode == "new_category":
+            input_y = items_y + items_height
+            input_height = 8
+            
+            self.draw_box(input_y, 0, input_height, self.width, "Create New Category")
+            
+            # Category name input
+            self.safe_addstr(input_y + 1, 2, "Category Name:", curses.color_pair(1))
+            
+            # Show input with cursor
+            display_input = self.category_input
+            if len(display_input) < self.category_cursor_pos:
+                display_input += " " * (self.category_cursor_pos - len(display_input))
+            
+            # Add cursor
+            display_input = display_input[:self.category_cursor_pos] + "█" + display_input[self.category_cursor_pos:]
+            
+            # Truncate if too long
+            max_input_len = self.width - 20
+            if len(display_input) > max_input_len:
+                display_input = display_input[:max_input_len-3] + "..."
+            
+            self.safe_addstr(input_y + 2, 4, display_input, curses.color_pair(4) | curses.A_BOLD)
+            
+            # Character count
+            char_count = f"({len(self.category_input)}/50)"
+            color = curses.color_pair(5) if len(self.category_input) > 45 else curses.color_pair(1)
+            self.safe_addstr(input_y + 2, self.width - 12, char_count, color)
+            
+            # Validation preview
+            if self.category_input:
+                validated_name, error = self.validate_category_name(self.category_input)
+                if error:
+                    self.safe_addstr(input_y + 4, 2, f"❌ {error}", curses.color_pair(5))
+                else:
+                    # Check if category already exists
+                    node = self.resolve_path(self.path)
+                    if validated_name in node:
+                        self.safe_addstr(input_y + 4, 2, "⚠️ Category already exists", curses.color_pair(7))
+                    else:
+                        self.safe_addstr(input_y + 4, 2, f"✅ Will create: '{validated_name}'", curses.color_pair(2))
+            
+            # Instructions
+            instructions1 = "Enter:create | Esc:cancel | Ctrl+V/P:paste"
+            instructions2 = "Backspace:delete | ←→:move cursor"
+            self.safe_addstr(input_y + 5, 2, instructions1, curses.color_pair(1))
+            self.safe_addstr(input_y + 6, 2, instructions2, curses.color_pair(1))
+        
         # Footer
         footer_y = self.height - 4
         footer_height = 3
@@ -307,7 +398,10 @@ class ProductLinkManagerTUI:
         elif key == ord('d') or key == ord('D'):
             self.handle_delete()
         elif key == ord('n') or key == ord('N'):
-            self.handle_new_category()
+            self.mode = "new_category"
+            self.category_input = ""
+            self.category_cursor_pos = 0
+            self.show_status("📁 Enter new category name")
         elif key == ord('q') or key == ord('Q'):
             self.running = False
     
@@ -339,6 +433,62 @@ class ProductLinkManagerTUI:
                 self.add_inputs[self.add_input_index] = self.add_inputs[self.add_input_index][:-1]
         elif 32 <= key <= 126:  # Printable ASCII
             self.add_inputs[self.add_input_index] += chr(key)
+    
+    def handle_new_category_input(self, key):
+        if key == 27:  # ESC
+            self.mode = "browse"
+            self.show_status("❌ Category creation cancelled")
+        elif key == ord('\n') or key == curses.KEY_ENTER:
+            # Create the category
+            validated_name, error = self.validate_category_name(self.category_input)
+            if error:
+                self.show_status(f"❌ {error}")
+                return
+            
+            node = self.resolve_path(self.path)
+            if validated_name in node:
+                self.show_status("⚠️ Category already exists")
+                return
+            
+            # Create the category
+            node[validated_name] = {}
+            self.save_data()
+            self.show_status(f"✅ Created category: '{validated_name}'")
+            self.mode = "browse"
+            
+            # Select the new category
+            items = self.get_current_items()
+            for i, item in enumerate(items):
+                if item[0] == "category" and item[1] == validated_name:
+                    self.current_selection = i
+                    break
+        elif key == ord('p') or key == ord('P'):
+            self.paste_from_clipboard()
+        elif key == 22:  # Ctrl+V
+            self.paste_from_clipboard()
+        elif key == curses.KEY_BACKSPACE or key == 127 or key == 8:
+            if self.category_cursor_pos > 0:
+                self.category_input = self.category_input[:self.category_cursor_pos-1] + self.category_input[self.category_cursor_pos:]
+                self.category_cursor_pos -= 1
+        elif key == curses.KEY_LEFT:
+            self.category_cursor_pos = max(0, self.category_cursor_pos - 1)
+        elif key == curses.KEY_RIGHT:
+            self.category_cursor_pos = min(len(self.category_input), self.category_cursor_pos + 1)
+        elif key == curses.KEY_HOME:
+            self.category_cursor_pos = 0
+        elif key == curses.KEY_END:
+            self.category_cursor_pos = len(self.category_input)
+        elif 32 <= key <= 126:  # Printable ASCII
+            if len(self.category_input) < 50:
+                char = chr(key)
+                # Filter out invalid characters
+                if not re.search(r'[<>:"/\\|?*]', char):
+                    self.category_input = self.category_input[:self.category_cursor_pos] + char + self.category_input[self.category_cursor_pos:]
+                    self.category_cursor_pos += 1
+                else:
+                    self.show_status("❌ Invalid character (not allowed: < > : \" / \\ | ? *)")
+            else:
+                self.show_status("❌ Maximum length reached (50 characters)")
     
     def handle_enter(self):
         items = self.get_current_items()
@@ -409,41 +559,6 @@ class ProductLinkManagerTUI:
         else:
             self.show_status("❌ Cancelled")
     
-    def handle_new_category(self):
-        # Simple input for new category name
-        self.stdscr.clear()
-        prompt = "Enter category name: "
-        self.safe_addstr(self.height // 2, (self.width - len(prompt)) // 2 - 10, prompt, curses.color_pair(1))
-        self.stdscr.refresh()
-        
-        # Enable cursor and echo for input
-        curses.curs_set(1)
-        curses.echo()
-        
-        try:
-            # Get input
-            input_y = self.height // 2
-            input_x = (self.width - len(prompt)) // 2 - 10 + len(prompt)
-            self.stdscr.move(input_y, input_x)
-            name = self.stdscr.getstr(input_y, input_x, 50).decode('utf-8')
-            
-            if name:
-                node = self.resolve_path(self.path)
-                if name in node:
-                    self.show_status("⚠️ Category already exists")
-                else:
-                    node[name] = {}
-                    self.save_data()
-                    self.show_status(f"✅ Created category: '{name}'")
-            else:
-                self.show_status("❌ No name provided")
-        except:
-            self.show_status("❌ Cancelled")
-        finally:
-            # Restore cursor and echo settings
-            curses.curs_set(0)
-            curses.noecho()
-    
     def run(self):
         """Main run loop"""
         self.stdscr.timeout(100)  # Non-blocking input with 100ms timeout
@@ -460,6 +575,8 @@ class ProductLinkManagerTUI:
                         self.handle_browse_input(key)
                     elif self.mode == "adding":
                         self.handle_adding_input(key)
+                    elif self.mode == "new_category":
+                        self.handle_new_category_input(key)
             except:
                 pass
             

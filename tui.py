@@ -179,7 +179,7 @@ class ProductLinkManagerTUI:
                 )
                 input_panels.append(panel)
 
-            add_instructions = Text("↑↓ to switch | Tab to confirm | ESC to cancel | Ctrl+V to paste", style="cyan")
+            add_instructions = Text("↑↓ to switch | Tab to confirm | ESC to cancel | Ctrl+V to paste | P to paste", style="cyan")
             input_panels.append(Panel(Align.center(add_instructions), border_style="cyan"))
 
             display_parts.extend(input_panels)
@@ -218,6 +218,29 @@ class ProductLinkManagerTUI:
         self.status_message = message
         self.status_time = time.time()
     
+    def paste_from_clipboard(self):
+        """Paste text from clipboard to current input field"""
+        try:
+            paste_text = pyperclip.paste()
+            if paste_text:
+                # Clean up the pasted text (remove newlines, extra spaces)
+                paste_text = paste_text.strip().replace('\n', ' ').replace('\r', ' ')
+                while '  ' in paste_text:  # Remove multiple spaces
+                    paste_text = paste_text.replace('  ', ' ')
+                
+                # If pasting into URL field and it looks like a URL, replace entirely
+                if self.add_input_index == 0 and (paste_text.startswith('http://') or paste_text.startswith('https://')):
+                    self.add_inputs[self.add_input_index] = paste_text
+                    self.show_status(f"📋 Pasted URL: {paste_text[:50]}{'...' if len(paste_text) > 50 else ''}")
+                else:
+                    # Otherwise append to current text
+                    self.add_inputs[self.add_input_index] += paste_text
+                    self.show_status(f"📋 Pasted: {paste_text[:30]}{'...' if len(paste_text) > 30 else ''}")
+            else:
+                self.show_status("📋 Clipboard is empty")
+        except Exception as e:
+            self.show_status(f"❌ Paste failed: {str(e)}")
+    
     def handle_input(self):
         while self.running:
             try:
@@ -247,6 +270,14 @@ class ProductLinkManagerTUI:
             self.mode = "adding"
             self.add_inputs = ["", ""]
             self.add_input_index = 0
+            # Auto-paste if clipboard contains a URL
+            try:
+                clipboard_content = pyperclip.paste()
+                if clipboard_content and (clipboard_content.startswith('http://') or clipboard_content.startswith('https://')):
+                    self.add_inputs[0] = clipboard_content.strip()
+                    self.show_status(f"📋 Auto-pasted URL from clipboard")
+            except:
+                pass
         elif event.name == 'd':
             self.handle_delete()
         elif event.name == 'n':
@@ -262,12 +293,14 @@ class ProductLinkManagerTUI:
         elif event.name == 'esc':
             self.mode = "browse"
             self.show_status("❌ Add cancelled")
+        elif event.name == 'p':  # Simple 'P' key for paste
+            self.paste_from_clipboard()
         elif event.name == 'v' and keyboard.is_pressed('ctrl'):
-            try:
-                paste_text = pyperclip.paste()
-                self.add_inputs[self.add_input_index] += paste_text
-            except:
-                self.show_status("❌ Paste failed")
+            # Handle Ctrl+V - check if ctrl is currently pressed
+            self.paste_from_clipboard()
+        elif event.name == 'ctrl+v':
+            # Alternative Ctrl+V detection
+            self.paste_from_clipboard()
         elif event.name == 'tab':
             # On Tab, if URL is empty, do nothing
             if not self.add_inputs[0].strip():
@@ -288,7 +321,7 @@ class ProductLinkManagerTUI:
                 self.add_inputs[self.add_input_index] += ' '
             elif event.name == 'backspace':
                 self.add_inputs[self.add_input_index] = self.add_inputs[self.add_input_index][:-1]
-            elif event.name in [':', '.', '/', '-', '_', '=', '?', '&', '%']:
+            elif event.name in [':', '.', '/', '-', '_', '=', '?', '&', '%', '#', '+', '@', '~']:
                 self.add_inputs[self.add_input_index] += event.name
                 
         
@@ -419,7 +452,8 @@ class ProductLinkManagerTUI:
     
     def run(self):
         self.console.print("[bold green]🛒 Product Link Manager Starting...[/bold green]")
-        self.console.print("[yellow]Press Q to quit, use arrow keys to navigate[/yellow]\n")
+        self.console.print("[yellow]Press Q to quit, use arrow keys to navigate[/yellow]")
+        self.console.print("[yellow]When adding links: Press 'P' to paste from clipboard or Ctrl+V[/yellow]\n")
         time.sleep(1)
         
         # Setup terminal to prevent echo
