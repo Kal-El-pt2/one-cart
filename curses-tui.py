@@ -413,8 +413,6 @@ class ProductLinkManagerTUI:
         elif key == 27:  # ESC
             self.mode = "browse"
             self.show_status("❌ Add cancelled")
-        elif key == ord('p') or key == ord('P'):
-            self.paste_from_clipboard()
         elif key == 22:  # Ctrl+V
             self.paste_from_clipboard()
         elif key == ord('\t'):  # Tab
