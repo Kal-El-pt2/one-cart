@@ -522,43 +522,62 @@ class ProductLinkManagerTUI:
         if not items or self.current_selection >= len(items):
             self.show_status("❌ No item to delete")
             return
-        
+
         item = items[self.current_selection]
-        
-        # Simple confirmation - show message and wait for y/n
+
+        # Simple confirmation
         self.stdscr.clear()
         if item[0] == "category":
             confirm_text = f"Delete category '{item[1]}' and all its contents? (y/n)"
         else:
             confirm_text = f"Delete link '{item[1]}'? (y/n)"
-        
+
         self.safe_addstr(self.height // 2, (self.width - len(confirm_text)) // 2, confirm_text, curses.color_pair(5) | curses.A_BOLD)
         self.stdscr.refresh()
-        
+
+        # Set blocking input for confirmation
+        self.stdscr.timeout(-1)  # Blocking mode
         key = self.stdscr.getch()
+        self.stdscr.timeout(100)  # Restore non-blocking mode
+        
         if key == ord('y') or key == ord('Y'):
+            node = self.resolve_path(self.path)
             if item[0] == "category":
-                node = self.resolve_path(self.path)
-                del node[item[1]]
-                self.save_data()
-                self.show_status(f"🗑️ Deleted category '{item[1]}'")
-            else:
-                node = self.resolve_path(self.path)
-                links = node.get(LINKS_KEY, [])
-                # Find the link index
-                link_index = self.current_selection - len([k for k in node if k != LINKS_KEY])
-                if 0 <= link_index < len(links):
-                    links.pop(link_index)
+                # Delete category
+                if item[1] in node:
+                    del node[item[1]]
                     self.save_data()
-                    self.show_status("🗑️ Deleted link")
-            
-            # Adjust selection
+                    self.show_status(f"🗑️ Deleted category '{item[1]}'")
+                else:
+                    self.show_status("❌ Category not found")
+            else:
+                # Delete link - calculate correct index like in CLI
+                links = node.get(LINKS_KEY, [])
+                if not links:
+                    self.show_status("❌ No links to delete")
+                    return
+                
+                # Calculate link index: subtract number of categories from current_selection
+                num_categories = len([k for k in node if k != LINKS_KEY])
+                link_index = self.current_selection - num_categories
+                
+                if 0 <= link_index < len(links):
+                    removed = links.pop(link_index)
+                    self.save_data()
+                    # Show URL or first element if it's a list
+                    removed_url = removed[0] if isinstance(removed, list) else removed
+                    self.show_status(f"🗑️ Removed: {removed_url}")
+                else:
+                    self.show_status("❌ Invalid link index")
+
+            # Adjust selection after deletion
             new_items = self.get_current_items()
             if self.current_selection >= len(new_items):
                 self.current_selection = max(0, len(new_items) - 1)
         else:
-            self.show_status("❌ Cancelled")
-    
+            self.show_status("❌ Delete cancelled")
+            
+            
     def run(self):
         """Main run loop"""
         self.stdscr.timeout(100)  # Non-blocking input with 100ms timeout
