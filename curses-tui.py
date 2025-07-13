@@ -546,11 +546,17 @@ class ProductLinkManagerTUI:
         
     def handle_browse_input(self, key):
         if key == curses.KEY_UP:
-            self.current_selection = max(0, self.current_selection - 1)
+            if self.current_selection == 0:
+                items = self.get_current_items()
+                self.current_selection = len(items)-1
+            else:
+                self.current_selection = self.current_selection - 1
         elif key == curses.KEY_DOWN:
-            items = self.get_current_items()
-            if items:
-                self.current_selection = min(len(items) - 1, self.current_selection + 1)
+                items = self.get_current_items()
+                if self.current_selection == len(items)-1:
+                    self.current_selection = 0
+                else:
+                    self.current_selection = self.current_selection + 1
         elif key == ord('\n') or key == curses.KEY_ENTER:
             self.handle_enter()
         elif key == ord('b') or key == ord('B'):
