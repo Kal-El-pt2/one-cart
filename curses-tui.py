@@ -3,7 +3,6 @@ import webbrowser
 import os
 import sys
 import curses
-import threading
 import time
 import pyperclip
 import re
