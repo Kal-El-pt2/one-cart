@@ -457,7 +457,7 @@ class ProductLinkManagerTUI:
             footer_height = 3
             self.draw_box(footer_y, 0, footer_height, self.width, "Controls")
             
-            controls = "↑↓:Navigate | Enter:Select | B:Back | A:Add | E:Edit | D:Delete | N:New Category | Q:Quit"
+            controls = "↑↓:Navigate | Enter:Select| O:Open All | B:Back | A:Add | E:Edit | D:Delete | N:New Category | Q:Quit"
             if len(controls) > self.width - 4:
                 controls1 = "↑↓:Navigate | Enter:Select | B:Back | A:Add | E:Edit"
                 controls2 = "D:Delete | N:New Category | Q:Quit"
@@ -575,6 +575,18 @@ class ProductLinkManagerTUI:
             self.category_input = ""
             self.category_cursor_pos = 0
             self.show_status("📁 Enter new category name")
+        elif key == ord('o') or key == ord('O'):
+            items = self.get_current_items()
+            for item in items:
+                if item[0] == "link":   # <-- This is the fix!
+                    link_data = item[2]
+                    url = link_data[0] if isinstance(link_data, list) else link_data
+                    try:
+                        webbrowser.open_new_tab(url)
+                        self.show_status(f"🌐 Opened: {url}")
+                    except:
+                        self.show_status(f"❌ Failed to open: {url}")
+
         elif key == ord('q') or key == ord('Q'):
             self.running = False
     
